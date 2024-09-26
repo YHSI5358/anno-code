@@ -261,25 +261,31 @@ def build_similarity_matrix(df):
 
 
 def DFS(node, M, visited):
+    stack = [node]
     L = []
-    visited[node] = 1
-    L.append(node)
-    for i in range(len(M)):
-        if M[node, i] > 0 and visited[i] == 0:
-            L.extend(DFS(i, M, visited))
+
+    while stack:
+        current_node = stack.pop()
+        if visited[current_node] == 0:
+            visited[current_node] = 1
+            L.append(current_node)
+            
+            for neighbor in range(len(M)):
+                if M[current_node, neighbor] > 0 and visited[neighbor] == 0:
+                    stack.append(neighbor)
     return L
 
 def get_max_cluster_nums(df,threshold=0.04):
     clusters = []
     visited = np.zeros(len(df))
     M = np.zeros((len(df), len(df)))
+
+    worker_bboxes = df['worker_bbox'].values
+    author_ids = df['author_id'].values
+
     for i in range(len(df)):
         for j in range(i, len(df)):
-            IOU = calculate_iou(df.iloc[i]['worker_bbox'], df.iloc[j]['worker_bbox'])
-            sigma_i = calculate_giou(df.iloc[i]['worker_bbox'], df.iloc[i]['sam_bbox'])
-            sigma_j = calculate_giou(df.iloc[j]['worker_bbox'], df.iloc[j]['sam_bbox'])
-            score = IOU * sigma_i * sigma_j
-            score = IOU
+            score = calculate_iou(worker_bboxes[i], worker_bboxes[j])
             if score > threshold:
                 M[i, j] = score
                 M[j, i] = score
@@ -289,15 +295,17 @@ def get_max_cluster_nums(df,threshold=0.04):
         L = DFS(i, M, visited)
 
         for i in range(len(L)):
-            for j in range(i, len(L)):
-                if df.iloc[L[i]]['author_id'] == df.iloc[L[j]]['author_id'] and i != j:
-                    if np.mean([M[L[i], k] for k in range(len(df)) if df.iloc[k]['author_id'] != df.iloc[L[i]]['author_id']]) > \
-                        np.mean([M[L[j], k] for k in range(len(df)) if df.iloc[k]['author_id'] != df.iloc[L[j]]['author_id']]):
+            for j in range(i + 1, len(L)):
+                if author_ids[L[i]] == author_ids[L[j]]:
+                    mean_i = np.mean([M[L[i], k] for k in range(len(df)) if author_ids[k] != author_ids[L[i]]])
+                    mean_j = np.mean([M[L[j], k] for k in range(len(df)) if author_ids[k] != author_ids[L[j]]])
+                    if mean_i > mean_j:
                         visited[L[j]] = 0
                     else:
                         visited[L[i]] = 0
 
         clusters.append(L)
+
     author_counts = df['author'].value_counts()
     max_author_count = author_counts.max()
 
@@ -310,17 +318,23 @@ def cluster_for_single_image(df, img_name,author2quality, threshold=None):
     N = len(single_img_df)
     k = get_max_cluster_nums(df, threshold=threshold)
     similarity_matrix = build_similarity_matrix(single_img_df)
-    
 
     D = np.diag(similarity_matrix.sum(axis=1))
     M = np.zeros((N, N))
 
-    for i in range(N):
-        author = single_img_df.iloc[i]['author']
+    author_quality = single_img_df['author'].map(author2quality).values
+    worker_bboxes = single_img_df['worker_bbox'].values
+    sam_bboxes = single_img_df['sam_bbox'].values
 
-        M[i, i] = np.sum([similarity_matrix[i, j] * (1 + np.exp(author2quality[single_img_df.iloc[i]['author']]* author2quality[single_img_df.iloc[j]['author']]\
-                                                            *calculate_giou(single_img_df['worker_bbox'][i], single_img_df['sam_bbox'][i])\
-                                                                *calculate_giou(single_img_df['worker_bbox'][j], single_img_df['sam_bbox'][j]))) for j in range(N)])/N
+    giou_matrix = np.zeros((N, N))
+    for i in range(N):
+        for j in range(N):
+            giou_matrix[i, j] = calculate_giou(worker_bboxes[i], sam_bboxes[i]) * calculate_giou(worker_bboxes[j], sam_bboxes[j])
+
+    exp_matrix = np.exp(author_quality[:, None] * author_quality[None, :] * giou_matrix)
+
+    for i in range(N):
+        M[i, i] = np.sum(similarity_matrix[i, :] * (1 + exp_matrix[i, :])) / N
 
     L = D - similarity_matrix
 
@@ -331,12 +345,12 @@ def cluster_for_single_image(df, img_name,author2quality, threshold=None):
 
     ind = np.argsort(eigenvals)
     eigvectors_sorted = eigvectors[:, ind]
-    Q = eigvectors_sorted[:, :k]
+    R = eigvectors_sorted[:, :k]
 
-    H = M_inv_sqrt @ Q
+    H = M_inv_sqrt @ R
 
     kmeans = KMeans(n_clusters=k, random_state=0)
-    labels = kmeans.fit_predict(np.real(H)) 
+    labels = kmeans.fit_predict(np.real(H))
     
 
     return labels
@@ -371,7 +385,7 @@ def calculate_scores(df_with_cluster, df_gt):
 
 def iter_cluster(df_worker,author2quality,threshold = None,  max_iter=10, if_remove_outlier=True, if_check_f1=False, df_gt=None):
     total_df_removed = pd.DataFrame()
-    df_with_cluster = copy.deepcopy(df_worker)
+    df_with_cluster = df_worker.copy()
     while max_iter > 0:
         df_with_cluster = once_cluster(df_with_cluster,author2quality,threshold)
         if if_remove_outlier:

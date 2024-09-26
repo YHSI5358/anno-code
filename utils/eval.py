@@ -108,7 +108,8 @@ def get_one2one_f1_score(df_aggregated, df_gt):
     error_pred_box = 0
     right_category = 0
     wrong_category = 0
-    total_count = 0
+    pred_total_count = 0
+    gt_total_count = 0
 
     for img_name in img_names:
 
@@ -133,7 +134,8 @@ def get_one2one_f1_score(df_aggregated, df_gt):
         is_matched_gt = np.zeros(len(gt_boxes))
         is_matched_pred = np.zeros(len(pred_boxes))
 
-        total_count += len(pred_boxes)
+        pred_total_count += len(pred_boxes)
+        gt_total_count += len(gt_boxes)
 
 
         max_iou_list = []
@@ -186,7 +188,7 @@ def get_one2one_f1_score(df_aggregated, df_gt):
     f1 = 2 * pre * recall / (pre + recall)
 
 
-    return f1, pre, recall, mean_iou, missed_gt_box, error_pred_box,pre_list,recall_list,right_category,wrong_category,total_count
+    return f1, pre, recall, mean_iou, missed_gt_box, error_pred_box,pre_list,recall_list,right_category,wrong_category,pred_total_count,gt_total_count
 
 
 def temp_eva(img2df,df_gt):
@@ -196,8 +198,10 @@ def temp_eva(img2df,df_gt):
     gt_box_count = []
     right_count = 0
     wrong_count = 0
-    total_count = 0
-    img_acc_list = []
+    pred_total_count = 0
+    gt_total_count = 0
+    img_percision = []
+    img_recall = []
 
     index = 0
     for img_name in img2df:
@@ -216,12 +220,15 @@ def temp_eva(img2df,df_gt):
         mean_PLG = np.mean(PLG)
         mean_RLG = np.mean(RLG)
         braylan_f1_score = 2 * mean_PLG * mean_RLG / (mean_PLG + mean_RLG)
-        f1, pre, recall, mean_iou, missed_gt_box, error_pred_box,pred_list,recall_list,right_category,wrong_category,temp_total = get_one2one_f1_score(df_temp, temp_gt)
-        temp_acc = right_category/temp_total
-        img_acc_list.append(temp_acc)
+        f1, pre, recall, mean_iou, missed_gt_box, error_pred_box,pred_list,recall_list,right_category,wrong_category,temp_pred_total_count,temp_gt_total_count = get_one2one_f1_score(df_temp, temp_gt)
+        temp_percision = right_category/temp_pred_total_count
+        img_percision.append(temp_percision)
+        temp_recall = right_category/temp_gt_total_count
+        img_recall.append(temp_recall)
         right_count += right_category
         wrong_count += wrong_category
-        total_count += temp_total
+        pred_total_count += temp_pred_total_count
+        gt_total_count += temp_gt_total_count
         braylan_f1_scores.append(braylan_f1_score)
         one2one_f1_scores.append(f1)
         index += 1
@@ -230,7 +237,8 @@ def temp_eva(img2df,df_gt):
     one2one_f1_scores = [0 if np.isnan(score) else score for score in one2one_f1_scores]
 
     
-    acc = right_count / total_count
+    percision = right_count/pred_total_count
+    recall = right_count/gt_total_count
 
-    return braylan_f1_scores, one2one_f1_scores, acc
+    return braylan_f1_scores, one2one_f1_scores, percision, recall, img_percision, img_recall
     
