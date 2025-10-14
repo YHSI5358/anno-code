@@ -17,7 +17,7 @@ This repository contains the code for the paper "**STARLET: A Framework for Aggr
   - `data_process.py`: Script for processing data.
   - `eval.py`: Script for evaluating the aggregated annotations.
 - **TechnicalReport/**: Our technical report.
-  - `Technical report.pdf`: The technical report of our work.
+  - `TechnicalReport.pdf`: The technical report of our work.
 
 ### Usage
 
